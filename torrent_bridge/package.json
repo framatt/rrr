@@ -1,0 +1,18 @@
+{
+  "name": "private-mirror-torrent-bridge",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Local WebTorrent streaming bridge for Private Mirror",
+  "type": "module",
+  "main": "server.mjs",
+  "dependencies": {
+    "parse-torrent": "^11.0.24",
+    "webtorrent": "^3.0.21"
+  },
+  "scripts": {
+    "start": "node server.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

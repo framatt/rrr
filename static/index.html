@@ -1,0 +1,234 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0b0b0f">
+  <title>Private Mirror</title>
+  <link rel="stylesheet" href="/assets/style.css">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="#/for-you" aria-label="Private Mirror home">
+      <span class="brand-mark">N</span>
+      <span class="brand-text">Private<span>Mirror</span></span>
+    </a>
+    <nav class="nav" aria-label="Sections">
+      <button class="nav-btn active" data-view="for-you" type="button">For You</button>
+      <button class="nav-btn" data-view="browse" type="button">Browse</button>
+      <button class="nav-btn" data-view="lists" type="button">Lists</button>
+      <button class="nav-btn" data-view="downloads" type="button">Downloads</button>
+      <button class="nav-btn" data-view="library" type="button">My List</button>
+    </nav>
+    <form id="search-form" class="search" role="search">
+      <input id="search-input" type="search" placeholder="Search titles  (press /)" autocomplete="off" aria-label="Search titles">
+      <button type="submit" aria-label="Search">Search</button>
+    </form>
+    <div class="top-actions">
+      <button id="random-btn" class="btn ghost" type="button" title="Pick something random (R)">Surprise me</button>
+      <label class="kids-switch" title="Kids mode (K)">
+        <input id="kids-toggle" type="checkbox">
+        <span class="switch-track" aria-hidden="true"></span>
+        <span class="switch-label">Kids</span>
+      </label>
+      <button id="settings-btn" class="icon-btn" type="button" title="Settings" aria-label="Settings">⚙</button>
+    </div>
+  </header>
+
+  <main class="shell">
+    <section id="view-for-you" class="view">
+      <div id="for-you-hero"></div>
+      <div id="for-you-rows"></div>
+    </section>
+
+    <section id="view-browse" class="view hidden">
+      <div class="page-head">
+        <div>
+          <h1>Browse</h1>
+          <p id="browse-meta">Loading catalog…</p>
+        </div>
+        <div id="browse-count" class="page-count"></div>
+      </div>
+      <div id="filter-bar" class="filter-bar" aria-label="Catalog filters"></div>
+      <div id="browse-grid" class="grid" aria-live="polite"></div>
+      <div class="more-wrap">
+        <button id="load-more" class="load-more hidden" type="button">Load more</button>
+      </div>
+    </section>
+
+    <section id="view-lists" class="view hidden">
+      <div class="page-head">
+        <div>
+          <h1>Lists</h1>
+          <p>Live charts from the catalog feed, optional TMDB charts and lists imported from the internet.</p>
+        </div>
+        <button id="refresh-lists" class="btn" type="button">Refresh live lists</button>
+      </div>
+      <div class="import-panel">
+        <div class="import-row">
+          <input id="list-url" type="url" placeholder="https://example.com/list.json · CSV · text · HTML table" autocomplete="off">
+          <button id="import-url-btn" class="btn primary" type="button">Import URL</button>
+        </div>
+        <details class="import-paste">
+          <summary>Paste a list instead</summary>
+          <input id="list-name" type="text" placeholder="List name (optional)">
+          <textarea id="list-text" rows="5" placeholder="One title per line, e.g. The Odyssey (2026)"></textarea>
+          <button id="import-text-btn" class="btn" type="button">Import pasted list</button>
+        </details>
+        <p class="hint">Accepts TMDB-style JSON, CSV/TSV (IMDb exports), plain text and HTML tables. Titles are matched to this catalog.</p>
+      </div>
+      <div id="lists-grid" class="list-grid"></div>
+    </section>
+
+    <section id="view-list" class="view hidden">
+      <button id="list-back" class="back-btn" type="button">← All lists</button>
+      <div class="page-head">
+        <div>
+          <h1 id="list-title">List</h1>
+          <p id="list-meta"></p>
+        </div>
+        <button id="delete-list" class="btn danger hidden" type="button">Delete list</button>
+      </div>
+      <div id="list-grid" class="grid"></div>
+    </section>
+
+    <section id="view-library" class="view hidden">
+      <div class="page-head">
+        <div>
+          <h1>My List</h1>
+          <p id="library-stats">Your watchlist, reactions and viewing history.</p>
+        </div>
+        <div class="library-legend">
+          <span><b>♥</b> Like</span>
+          <span><b>✓</b> Watched</span>
+          <span><b>+</b> Watchlist</span>
+        </div>
+      </div>
+      <div id="library-rows"></div>
+    </section>
+
+    <section id="view-downloads" class="view hidden">
+      <div class="page-head">
+        <div>
+          <h1>Downloads</h1>
+          <p id="downloads-meta">Torrents kept downloading in the background so you can watch them later.</p>
+        </div>
+        <button id="downloads-refresh" class="btn" type="button">Refresh</button>
+      </div>
+      <div id="downloads-list" class="download-list" aria-live="polite"></div>
+    </section>
+  </main>
+
+  <div id="details-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="details-title">
+    <div class="modal-backdrop" data-close="details"></div>
+    <article class="modal-card details-card">
+      <button class="modal-close" data-close="details" aria-label="Close details">×</button>
+      <div id="details-body"></div>
+    </article>
+  </div>
+
+  <div id="player-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="player-title">
+    <div class="modal-backdrop" data-close="player"></div>
+    <article class="modal-card player-card">
+      <div class="player-head">
+        <h2 id="player-title">Player</h2>
+        <div class="player-head-actions">
+          <button id="sources-btn" class="btn ghost sources-btn" type="button" title="Find another source (torrents)">Sources</button>
+          <button id="cast-btn" class="btn ghost cast-btn" type="button" title="Cast to a TV">Cast</button>
+          <button class="modal-close" data-close="player" aria-label="Close player">&times;</button>
+        </div>
+      </div>
+      <div id="cast-menu" class="cast-menu hidden" role="dialog" aria-label="Cast devices"></div>
+      <div class="video-wrap">
+        <video id="video" controls playsinline preload="metadata"></video>
+        <div id="player-status" class="player-status">Resolving stream…</div>
+      </div>
+      <div id="slow-prompt" class="slow-prompt hidden" role="status" aria-live="polite">
+        <div class="slow-prompt-copy">
+          <strong>Oops — this torrent is downloading slowly</strong>
+          <p id="slow-prompt-text">Would you like to add it to Downloads and watch it later? We'll keep downloading it in the background.</p>
+        </div>
+        <div class="slow-prompt-actions">
+          <button id="slow-download" class="btn primary" type="button">Add to Downloads</button>
+          <button id="slow-dismiss" class="btn ghost" type="button">Keep trying</button>
+        </div>
+      </div>
+      <div class="player-foot">
+        <div id="quality" class="quality" role="group" aria-label="Quality"></div>
+        <p id="player-note" class="player-note"></p>
+      </div>
+    </article>
+  </div>
+
+  <div id="random-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="random-title">
+    <div class="modal-backdrop" data-close="random"></div>
+    <article class="modal-card random-card">
+      <button class="modal-close" data-close="random" aria-label="Close">×</button>
+      <h2 id="random-title">Surprise me</h2>
+      <p class="random-sub">A random pick from the titles that match your current filters.</p>
+      <div id="random-body"></div>
+      <div class="random-actions">
+        <button id="random-again" class="btn primary" type="button">Roll again</button>
+        <button id="random-browse" class="btn" type="button">Open browse filters</button>
+      </div>
+    </article>
+  </div>
+
+  <div id="settings-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="settings-title">
+    <div class="modal-backdrop" data-close="settings"></div>
+    <article class="modal-card settings-card">
+      <button class="modal-close" data-close="settings" aria-label="Close settings">×</button>
+      <h2 id="settings-title">Settings</h2>
+      <div id="settings-body"></div>
+    </article>
+  </div>
+
+  <div id="sources-modal" class="modal hidden sources-modal" role="dialog" aria-modal="true" aria-labelledby="sources-title">
+    <div class="modal-backdrop" data-close="sources"></div>
+    <article class="modal-card sources-card">
+      <header class="sources-head">
+        <div>
+          <h2 id="sources-title">Choose a source</h2>
+          <p id="sources-sub" class="sources-sub"></p>
+        </div>
+        <button class="modal-close" data-close="sources" aria-label="Close sources">&times;</button>
+      </header>
+      <form id="sources-search-form" class="sources-search hidden" role="search">
+        <input id="sources-query" type="search" placeholder="Search any movie or series..." autocomplete="off" aria-label="Torrent search query">
+        <select id="sources-type" aria-label="Content type">
+          <option value="movie">Movie</option>
+          <option value="tv">Series</option>
+        </select>
+        <input id="sources-season" class="sources-num hidden" type="number" min="1" value="1" aria-label="Season">
+        <input id="sources-episode" class="sources-num hidden" type="number" min="1" value="1" aria-label="Episode">
+        <button class="btn primary" type="submit">Search</button>
+      </form>
+      <div class="sources-toolbar">
+        <div id="sources-providers" class="sources-providers"></div>
+        <div class="sources-controls">
+          <label>Quality
+            <select id="sources-quality">
+              <option value="">All</option>
+            </select>
+          </label>
+          <label>Sort
+            <select id="sources-sort">
+              <option value="seeds">Seeders</option>
+              <option value="quality">Quality</option>
+              <option value="size">Size</option>
+            </select>
+          </label>
+          <label class="sources-check"><input id="sources-webonly" type="checkbox"> MP4/WebM only</label>
+          <button id="sources-refresh" class="btn ghost small" type="button">Refresh</button>
+        </div>
+      </div>
+      <div id="sources-list" class="sources-list" aria-live="polite"></div>
+      <p id="sources-note" class="sources-note"></p>
+    </article>
+  </div>
+
+  <div id="toast" class="toast hidden" role="status"></div>
+
+  <script src="/assets/app.js"></script>
+</body>
+</html>

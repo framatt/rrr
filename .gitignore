@@ -1,0 +1,10 @@
+__pycache__/
+.app_cache/
+.catalog_cache/
+catalog.json
+*.pyc
+state/
+
+torrent_bridge/node_modules/
+torrent_bridge/.app_cache/
+torrent_bridge/*.log
