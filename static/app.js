@@ -32,6 +32,15 @@ const state = {
   lastProgressAt: 0,
   settingsTimer: null,
   castTimer: null,
+  castMode: "server",
+  castContext: null,
+  castSession: null,
+  castBase: "",
+  castLoadedKey: "",
+  castServerAvailable: false,
+  castPlayer: null,
+  castPlayerController: null,
+  lastCastProgressAt: 0,
   sourcesContext: null,
   sourcesData: null,
   sourcesMode: "title",
@@ -1355,6 +1364,7 @@ function setStream(index) {
     button.classList.toggle("active", Number(button.dataset.index) === index);
   });
   const directUrl = stream.url || "";
+  const castPosition = video.currentTime || 0;
   playerStatus.textContent = directUrl
     ? "Opening from Downloads…"
     : stream.torrent
@@ -1378,6 +1388,17 @@ function setStream(index) {
   }
   video.load();
   video.play().catch(() => {});
+  if (state.castMode === "client" && state.castSession) {
+    stream.keep = true;
+    video.pause();
+    playerStatus.classList.add("hidden");
+    playerNote.textContent = "Casting. Use the TV remote to control playback.";
+    loadStreamOnCast(state.castSession, stream, castPosition).catch((error) => {
+      const message = castErrorMessage(error);
+      playerNote.textContent = message;
+      showToast(message);
+    });
+  }
 }
 
 function tryLowerQuality() {
@@ -1559,7 +1580,174 @@ function stopCastPolling() {
   state.castTimer = null;
 }
 
+function castSdkAvailable() {
+  return !!(window.__castApiAvailable && window.cast && window.cast.framework);
+}
+
+function isClientCasting() {
+  return state.castMode === "client" && !!state.castSession;
+}
+
+function castMediaBase() {
+  return String(state.castBase || window.location.origin || "").replace(/\/+$/, "");
+}
+
+function castStreamKey(stream) {
+  return String(stream?.token || stream?.url || "");
+}
+
+function castMediaUrl(stream) {
+  const base = castMediaBase();
+  if (stream?.url && !stream.torrent) {
+    return stream.url.startsWith("http") ? stream.url : `${base}${stream.url}`;
+  }
+  if (stream?.torrent) {
+    return `${base}/api/torrents/stream?token=${encodeURIComponent(stream.token || "")}`;
+  }
+  return `${base}/api/video?token=${encodeURIComponent(stream?.token || "")}`;
+}
+
+function castThumbUrl() {
+  const raw = String(state.player?.item?.poster || state.player?.item?.backdrop || "");
+  if (!raw) return "";
+  if (raw.startsWith("http://") || raw.startsWith("https://")) return raw;
+  if (raw.startsWith("/")) return `${castMediaBase()}${raw}`;
+  return "";
+}
+
+function castErrorMessage(error) {
+  return typeof error === "string"
+    ? `The TV could not start this stream (${error}).`
+    : error?.description || error?.message || "The TV could not start this stream.";
+}
+
+function loadStreamOnCast(session, stream, position = 0) {
+  if (!session || !stream) return Promise.reject(new Error("Choose a stream first."));
+  const url = castMediaUrl(stream);
+  if (!url) return Promise.reject(new Error("This stream cannot be cast."));
+  const mediaInfo = new chrome.cast.media.MediaInfo(url, stream.content_type || "video/mp4");
+  mediaInfo.streamType = chrome.cast.media.StreamType.BUFFERED;
+  const metadata = new chrome.cast.media.GenericMediaMetadata();
+  metadata.title = playerTitle.textContent || state.player?.title || "";
+  const thumb = castThumbUrl();
+  if (thumb) metadata.images = [{ url: thumb }];
+  mediaInfo.metadata = metadata;
+  const request = new chrome.cast.media.LoadRequest(mediaInfo);
+  request.autoplay = true;
+  request.currentTime = Math.max(0, Number(position) || 0);
+  return session.loadMedia(request).then((result) => {
+    state.castLoadedKey = castStreamKey(stream);
+    return result;
+  });
+}
+
+function onCastSessionStarted(session, resumed = false) {
+  if (!session) return;
+  state.castSession = session;
+  const device = session.getCastDevice ? session.getCastDevice() : {};
+  const name = device?.friendlyName || device?.displayName || "TV";
+  setCastButton(true, name);
+  castMenu.classList.add("hidden");
+  const stream = state.player?.streams?.[state.streamIndex];
+  if (!state.player || !stream) return;
+  stream.keep = true;
+  video.pause();
+  playerStatus.classList.add("hidden");
+  playerNote.textContent = `Casting to ${name}. Use the TV remote to control playback.`;
+  if (resumed || state.castLoadedKey === castStreamKey(stream)) return;
+  loadStreamOnCast(session, stream, video.currentTime || state.player.resume?.position || 0)
+    .then(() => showToast(`Casting to ${name}.`))
+    .catch((error) => {
+      const message = castErrorMessage(error);
+      playerNote.textContent = message;
+      showToast(message);
+    });
+}
+
+function onCastSessionEnded() {
+  const wasActive = !!state.castSession;
+  if (wasActive && state.player && state.castPlayer) {
+    const position = Number(state.castPlayer.currentTime || 0);
+    const duration = Number(state.castPlayer.duration || 0);
+    if (duration && position >= 10) sendProgressValues(position, duration);
+  }
+  state.castSession = null;
+  state.castLoadedKey = "";
+  setCastButton(false);
+  castMenu.classList.add("hidden");
+  if (state.player) playerNote.textContent = "Cast stopped. Local playback is ready.";
+  if (wasActive) showToast("Cast stopped.");
+}
+
+function initializeClientCast() {
+  if (state.castContext) return true;
+  if (!castSdkAvailable()) return false;
+  try {
+    const context = cast.framework.CastContext.getInstance();
+    context.setOptions({
+      receiverApplicationId: chrome.cast.media.DEFAULT_MEDIA_RECEIVER_APP_ID,
+      autoJoinPolicy: chrome.cast.AutoJoinPolicy.ORIGIN_SCOPED,
+    });
+    context.addEventListener(
+      cast.framework.CastContextEventType.SESSION_STATE_CHANGED,
+      (event) => {
+        const session = context.getCurrentSession();
+        if (event.sessionState === cast.framework.SessionState.SESSION_STARTED) {
+          onCastSessionStarted(session, false);
+        } else if (event.sessionState === cast.framework.SessionState.SESSION_RESUMED) {
+          onCastSessionStarted(session, true);
+        } else if (event.sessionState === cast.framework.SessionState.SESSION_ENDED) {
+          onCastSessionEnded();
+        } else if (event.sessionState === cast.framework.SessionState.SESSION_START_FAILED) {
+          showToast("Could not start the Cast session.");
+        }
+      },
+    );
+    if (cast.framework.RemotePlayer && cast.framework.RemotePlayerController) {
+      try {
+        const player = new cast.framework.RemotePlayer();
+        const controller = new cast.framework.RemotePlayerController(player);
+        controller.addEventListener(
+          cast.framework.RemotePlayerEventType.ANY_CHANGE,
+          () => {
+            if (!isClientCasting() || !state.player) return;
+            const now = Date.now();
+            if (now - state.lastCastProgressAt < 8000) return;
+            const position = Number(player.currentTime || 0);
+            const duration = Number(player.duration || 0);
+            if (!duration || position < 10) return;
+            state.lastCastProgressAt = now;
+            sendProgressValues(position, duration);
+          },
+        );
+        state.castPlayer = player;
+        state.castPlayerController = controller;
+      } catch {
+        /* progress sync is optional */
+      }
+    }
+    state.castContext = context;
+    state.castMode = "client";
+    const session = context.getCurrentSession();
+    if (session) onCastSessionStarted(session, true);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function loadCastConfig() {
+  try {
+    const data = await api("/api/cast/config");
+    state.castBase = String(data.mediaBase || "").replace(/\/+$/, "");
+    state.castServerAvailable = !!data.serverSide;
+  } catch {
+    state.castBase = "";
+  }
+}
+
 function startCastPolling() {
+  if (state.castMode === "client") return;
   clearInterval(state.castTimer);
   state.castTimer = setInterval(async () => {
     if (!state.player) {
@@ -1580,6 +1768,16 @@ function startCastPolling() {
 }
 
 async function refreshCastState() {
+  if (state.castMode === "client") {
+    const session = state.castContext?.getCurrentSession?.();
+    if (session) {
+      const device = session.getCastDevice ? session.getCastDevice() : {};
+      setCastButton(true, device?.friendlyName || device?.displayName || "TV");
+    } else {
+      setCastButton(false);
+    }
+    return;
+  }
   try {
     const status = await api("/api/cast/status");
     if (status.active) {
@@ -1591,6 +1789,48 @@ async function refreshCastState() {
   } catch {
     setCastButton(false);
   }
+}
+
+function showClientCastMenu(session) {
+  const device = session.getCastDevice ? session.getCastDevice() : {};
+  const name = device?.friendlyName || device?.displayName || "TV";
+  castMenu.classList.remove("hidden");
+  castMenu.innerHTML = `
+    <h3>Cast</h3>
+    <button class="cast-device current" type="button" data-cast-stop="1">
+      <span>${esc(name)}</span>
+      <small>Connected</small>
+    </button>
+    <p class="player-note">Use the TV remote to control playback. The browser is only the remote.</p>`;
+  const stop = $("[data-cast-stop]", castMenu);
+  if (stop) stop.addEventListener("click", stopCasting);
+}
+
+async function handleCastButton() {
+  if (!state.player || state.streamIndex < 0) {
+    showToast("Start playback first.");
+    return;
+  }
+  if (!state.castContext && castSdkAvailable()) initializeClientCast();
+  if (state.castMode === "client" && state.castContext) {
+    const session = state.castContext.getCurrentSession();
+    if (session) {
+      showClientCastMenu(session);
+      return;
+    }
+    try {
+      await state.castContext.requestSession();
+    } catch (error) {
+      const code = String(error?.code || error?.name || "").toLowerCase();
+      if (code.includes("no_devices")) {
+        showToast("No Cast devices found on this network.");
+      } else if (!code.includes("cancel")) {
+        showToast("Could not open the Cast device list.");
+      }
+    }
+    return;
+  }
+  openCastMenu();
 }
 
 async function openCastMenu() {
@@ -1620,7 +1860,7 @@ function renderCastMenu(data, status) {
     castMenu.innerHTML = `
       <h3>Cast</h3>
       <p class="player-note">${esc(data.error || "Casting is unavailable.")}</p>
-      <p class="player-note">Then restart the server with <code>--host 0.0.0.0</code>.</p>`;
+      <p class="player-note">Use Chrome or Edge over HTTPS to cast from the browser instead.</p>`;
     return;
   }
   const casting = !!status?.active;
@@ -1636,9 +1876,9 @@ function renderCastMenu(data, status) {
     .join("");
   castMenu.innerHTML = `
     <h3>Cast to</h3>
-    ${rows || `<p class="player-note">No Cast devices found on this network.</p>`}
+    ${rows || `<p class="player-note">No Cast devices found from the server. Use Chrome or Edge over HTTPS to cast from the browser.</p>`}
     ${casting ? `<button class="cast-device" type="button" data-cast-stop="1"><span>Stop casting</span><small>${esc(status.device?.name || "")}</small></button>` : ""}
-    <p class="player-note">The TV must be on the same network as this server.</p>`;
+    <p class="player-note">The TV must be reachable from this server on its network.</p>`;
   $$("[data-cast-id]", castMenu).forEach((button) => {
     button.addEventListener("click", () => castToDevice(button.dataset.castId));
   });
@@ -1652,6 +1892,7 @@ async function castToDevice(deviceId) {
     showToast("Start playback first.");
     return;
   }
+  stream.keep = true;
   castMenu.innerHTML = `<p class="player-note">Sending the stream to the TV…</p>`;
   try {
     const data = await api("/api/cast/play", {
@@ -1677,6 +1918,19 @@ async function castToDevice(deviceId) {
 }
 
 async function stopCasting() {
+  if (state.castMode === "client" && state.castContext) {
+    try {
+      const session = state.castContext.getCurrentSession();
+      if (session) session.endSession(true);
+    } catch {
+      /* the session may already be gone */
+    }
+    setCastButton(false);
+    stopCastPolling();
+    castMenu.classList.add("hidden");
+    if (state.player) playerNote.textContent = "Cast stopped. Local playback is ready.";
+    return;
+  }
   try {
     await api("/api/cast/stop", { method: "POST" });
   } catch {
@@ -1689,23 +1943,29 @@ async function stopCasting() {
   showToast("Cast stopped.");
 }
 
-function sendProgress(force = false) {
-  if (!state.player || !state.player.item || !state.player.item.tmdbId || !video.duration) return;
-  const now = Date.now();
-  if (!force && now - state.lastProgressAt < 8000) return;
-  state.lastProgressAt = now;
+function sendProgressValues(position, duration) {
   const player = state.player;
+  if (!player || !player.item || !player.item.tmdbId || !duration) return;
   api("/api/library", {
     method: "POST",
     body: JSON.stringify({
       action: "progress",
       item: player.item,
-      position: video.currentTime,
-      duration: video.duration,
+      position,
+      duration,
       season: player.season,
       episode: player.episode,
     }),
   }).catch(() => {});
+}
+
+function sendProgress(force = false) {
+  if (isClientCasting()) return;
+  if (!state.player || !state.player.item || !state.player.item.tmdbId || !video.duration) return;
+  const now = Date.now();
+  if (!force && now - state.lastProgressAt < 8000) return;
+  state.lastProgressAt = now;
+  sendProgressValues(video.currentTime, video.duration);
 }
 
 video.addEventListener("loadedmetadata", () => {
@@ -1771,7 +2031,11 @@ function releaseTorrent(stream) {
 }
 
 function closePlayer() {
-  sendProgress(true);
+  if (isClientCasting() && state.castPlayer?.duration) {
+    sendProgressValues(state.castPlayer.currentTime || 0, state.castPlayer.duration || 0);
+  } else {
+    sendProgress(true);
+  }
   const streams = state.player?.streams || [];
   stopTorrentPolling();
   streams.forEach((entry) => releaseTorrent(entry));
@@ -2383,7 +2647,7 @@ $$("[data-close='random']").forEach((element) => {
   });
 });
 $$("[data-close='settings']").forEach((element) => element.addEventListener("click", closeSettings));
-castBtn.addEventListener("click", openCastMenu);
+castBtn.addEventListener("click", handleCastButton);
 sourcesBtn.addEventListener("click", () => {
   const player = state.player;
   if (!player) {
@@ -2543,6 +2807,9 @@ window.addEventListener("hashchange", route);
 
 document.body.classList.toggle("kids-mode", state.kids);
 $("#kids-toggle").checked = state.kids;
+loadCastConfig();
+window.addEventListener("cast-api-available", () => initializeClientCast());
+if (castSdkAvailable()) initializeClientCast();
 loadLibrary(true).finally(() => {
   route();
 });

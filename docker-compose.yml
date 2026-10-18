@@ -1,0 +1,43 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: rrr:latest
+    container_name: rrr
+    restart: unless-stopped
+    init: true
+    stop_grace_period: 30s
+
+    # Client-side Cast: the browser discovers the TV with the Cast SDK, and the
+    # TV fetches media from the HTTPS URL. The app itself no longer needs LAN
+    # multicast or host networking.
+    ports:
+      - "8080:8080"
+      - "${TORRENT_PORT:-51413}:${TORRENT_PORT:-51413}/tcp"
+      - "${TORRENT_PORT:-51413}:${TORRENT_PORT:-51413}/udp"
+
+    user: "${PUID:-1000}:${PGID:-1000}"
+    environment:
+      TZ: ${TZ:-UTC}
+      HOME: /data
+      APP_USER: ${APP_USER:-}
+      APP_PASS: ${APP_PASS:-}
+      CAST_MEDIA_BASE: ${CAST_MEDIA_BASE:-}
+      CATALOG_PATH: /data/catalog.json
+      LIBRARY_PATH: /data/state/userdata.json
+      DOWNLOADS_PATH: /data/state/downloads.json
+      META_DB: /app/.app_cache/metadata.sqlite3
+      TMDB_API_KEY: ${TMDB_API_KEY:-}
+      NETMIRROR_BASE: ${NETMIRROR_BASE:-}
+      TORRENT_PORT: ${TORRENT_PORT:-51413}
+
+    volumes:
+      - ./data:/data
+      - ./data/cache:/app/.app_cache
+
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"

@@ -1,0 +1,15 @@
+.git
+.gitignore
+.env
+__pycache__/
+*.pyc
+*.log
+.app_cache/
+.catalog_cache/
+state/
+data/
+catalog.json
+torrent_bridge/node_modules/
+torrent_bridge/*.log
+.venv/
+venv/

@@ -37,6 +37,8 @@ const IDLE_MS = Math.max(60_000, Number(process.env.TORRENT_IDLE_MS || 30 * 60_0
 const EXIT_MS = Math.max(0, Number(process.env.TORRENT_BRIDGE_IDLE_EXIT || 2 * 60 * 60_000))
 const METADATA_TIMEOUT_MS = Math.max(5_000, Number(process.env.TORRENT_METADATA_TIMEOUT || 45_000))
 const KEEP_DATA = String(process.env.TORRENT_KEEP_DATA || '').toLowerCase() === 'true'
+const TORRENT_PORT = Number(process.env.TORRENT_PORT || 0)
+const TORRENT_DHT_PORT = Number(process.env.TORRENT_DHT_PORT || 0)
 
 const VIDEO_RE = /\.(mp4|m4v|mkv|webm|mov|avi|ts|m2ts|flv|wmv|ogv)$/i
 const AUDIO_RE = /\.(mp3|m4a|aac|flac|ogg|opus|wav)$/i
@@ -71,6 +73,8 @@ const client = new WebTorrent({
   lsd: true,
   utPex: true,
   path: DATA_DIR,
+  torrentPort: TORRENT_PORT,
+  dhtPort: TORRENT_DHT_PORT,
 })
 
 /** @type {Map<string, {infoHash:string,magnet:string,torrent:any,files:any[],selected:number,addedAt:number,lastAccess:number,ready:boolean,error:string,waiters:Set<Function>}>} */
@@ -504,6 +508,8 @@ async function route(req, res) {
       maxTorrents: MAX_TORRENTS,
       dataDir: DATA_DIR,
       listen: `${HOST}:${PORT || 'ephemeral'}`,
+      torrentPort: client.torrentPort || TORRENT_PORT,
+      dhtPort: client.dhtPort || TORRENT_DHT_PORT,
       uptime: Math.round(process.uptime()),
     })
   }

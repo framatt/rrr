@@ -4,6 +4,8 @@ __pycache__/
 catalog.json
 *.pyc
 state/
+.env
+data/
 
 torrent_bridge/node_modules/
 torrent_bridge/.app_cache/

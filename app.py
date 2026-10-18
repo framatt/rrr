@@ -661,7 +661,13 @@ def stream_content_type(url):
 def basic_auth():
     if not (APP_USER and APP_PASS):
         return None
-    if request.path in ("/api/video", "/api/subtitle", "/api/image", "/api/torrents/stream"):
+    if request.path in (
+        "/api/video",
+        "/api/subtitle",
+        "/api/image",
+        "/api/torrents/stream",
+        "/api/downloads/stream",
+    ):
         if verify_token(request.args.get("token") or ""):
             return None
     auth = request.authorization
@@ -691,9 +697,17 @@ def security_headers(response):
     response.headers["X-Frame-Options"] = "SAMEORIGIN"
     response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
     response.headers["Content-Security-Policy"] = (
-        "default-src 'self'; img-src 'self' data:; media-src 'self' blob:; "
-        "style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'; "
-        "font-src 'self'; frame-ancestors 'self'"
+        "default-src 'self'; img-src 'self' data: https://www.gstatic.com; "
+        "media-src 'self' blob:; style-src 'self' 'unsafe-inline' https://www.gstatic.com; "
+        "script-src 'self' https://www.gstatic.com "
+        "chrome-extension://pkedcjkdefgpdelpbcmbmeomcjbeemfm "
+        "chrome-extension://enhhojjnijigcajfphajepfemndkmdlo; "
+        "connect-src 'self' https://www.gstatic.com; "
+        "font-src 'self' https://www.gstatic.com; "
+        "frame-src https://www.gstatic.com "
+        "chrome-extension://pkedcjkdefgpdelpbcmbmeomcjbeemfm "
+        "chrome-extension://enhhojjnijigcajfphajepfemndkmdlo; "
+        "frame-ancestors 'self'"
     )
     if (
         response.mimetype == "application/json"
@@ -1997,6 +2011,17 @@ def api_cast_play():
     except CastError as exc:
         return jsonify({"ok": False, "error": str(exc)}), 502
     return jsonify({"ok": True, **result})
+
+
+@app.get("/api/cast/config")
+def api_cast_config():
+    return jsonify(
+        {
+            "ok": True,
+            "mediaBase": CAST_MEDIA_BASE,
+            "serverSide": casting.available(),
+        }
+    )
 
 
 @app.get("/api/cast/status")
